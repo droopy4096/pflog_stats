@@ -73,9 +73,9 @@ def parse_log(file_object):
 
 def main():
     parser=argparse.ArgumentParser()
-    parser.add_argument("--regexp", action="store_true", default=False)
-    parser.add_argument("--filter-src")
-    parser.add_argument("--filter-dst")
+    parser.add_argument("--regexp", action="store_true", default=False, help="Criterion provided in filters shall be treated as regexp")
+    parser.add_argument("--filter-src", help="print stats only for sources matching criteria")
+    parser.add_argument("--filter-dst", help="print stats only for destinations matching criteria")
     parser.add_argument("--resolve-dst", action="store_true", default=False, 
             help="resolve destination IPs")
     parser.add_argument("--resolve-src", action="store_true", default=False, 
