@@ -5,7 +5,7 @@ Based on idea from https://forums.freebsd.org/threads/3592/
 
 
 use as in-line parser for tcpdump:
-    tcpdump -enr pflog.0 | python parse_pflog.py
+    tcpdump -enr pflog.0 | python pflog_stats.py
 """
 
 import re,sys
