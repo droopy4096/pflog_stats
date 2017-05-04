@@ -18,18 +18,49 @@ import socket
 # 00:00:01.937933 rule 5.intra_services.20/0(match): pass in on vr2: 192.168.3.128.49144 > 192.168.0.1.53: 53364+[|domain]
 # 00:39:55.221738 rule 4.icmp.2/0(match): pass in on vr2: 192.168.3.107 > 192.168.3.1: ICMP echo request, id 11778, seq 1, length 64
 
-def main():
-    parser=argparse.ArgumentParser()
-    parser.add_argument("--filter",help="IP regexp filter")
-    parser.add_argument("--resolve-dst", action="store_true", default=False, 
-            help="resolve destination IPs")
-    parser.add_argument("--resolve-src", action="store_true", default=False, 
-            help="resolve source IPs")
-    args=parser.parse_args()
-    x=re.compile(r'rule (?P<rule>\S+)\: (?P<action>pass|block) (?P<direction>in|out) on (?P<interface>\w+)\: (?P<source_host>\d+\.\d+\.\d+\.\d+)(?:\.(?P<source_port>\d+))? > (?P<destination_host>\d+\.\d+\.\d+\.\d+)(?:\.(?P<destination_port>\d+))?\:')
+class Filter:
+    """ Include only selected records
+    """
+    def __init__(self, **kwargs):
+        """ passed params are keys from log hash - used to apply filtering
+        """
+        self.filters={}
+        for key in kwargs:
+            self.filters[key]=kwargs[key]
 
-    pre_stats={}
-    for s in sys.stdin:
+    def __call__(self,log_iterator):
+        for log in log_iterator:
+            passed=True
+            for f in self.filters:
+                if self.filters[f] != log[f]:
+                    passed=False
+                    break
+            if passed:
+                yield log
+
+class ReFilter:
+    """ Include only selected records matching the RE
+    """
+    def __init__(self, **kwargs):
+        """ passed params are keys from log hash - used to apply filtering
+        """
+        self.filters={}
+        for key in kwargs:
+            self.filters[key]=re.compile(kwargs[key])
+
+    def __call__(self,log_iterator):
+        for log in log_iterator:
+            passed=True
+            for f in self.filters:
+                if not self.filters[f].search(log[f]):
+                    passed=False
+                    break
+            if passed:
+                yield log
+
+def parse_log(file_object):
+    x=re.compile(r'rule (?P<rule>\S+)\: (?P<action>pass|block) (?P<direction>in|out) on (?P<interface>\w+)\: (?P<source_host>\d+\.\d+\.\d+\.\d+)(?:\.(?P<source_port>\d+))? > (?P<destination_host>\d+\.\d+\.\d+\.\d+)(?:\.(?P<destination_port>\d+))?\:')
+    for s in file_object:
       m=x.search(s)
       log={}
       try:
@@ -38,7 +69,32 @@ def main():
       except:
         print "!!!", s
         continue
+      yield log
 
+def main():
+    parser=argparse.ArgumentParser()
+    parser.add_argument("--regexp", action="store_true", default=False)
+    parser.add_argument("--filter-src")
+    parser.add_argument("--filter-dst")
+    parser.add_argument("--resolve-dst", action="store_true", default=False, 
+            help="resolve destination IPs")
+    parser.add_argument("--resolve-src", action="store_true", default=False, 
+            help="resolve source IPs")
+    args=parser.parse_args()
+
+    filter_params={}
+    if args.filter_src:
+        filter_params['source_host']=args.filter_src
+
+    if args.filter_dst:
+        filter_params['destination_host']=args.filter_dst
+
+    if args.regexp:
+        log_filter=ReFilter(**filter_params)
+    else:
+        log_filter=Filter(**filter_params)
+    pre_stats={}
+    for log in log_filter(parse_log(sys.stdin)):
       try:
         source=log['source_host']
         destination=log['destination_host']
