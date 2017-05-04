@@ -110,21 +110,26 @@ def main():
           print e
 
     stats={}
+    dns_cache={}
     for source_ip in pre_stats:
         if args.resolve_src:
             try:
-                source=socket.gethostbyaddr(source_ip)[0]
+                if not dns_cache.has_key(source_ip):
+                    dns_cache[source_ip]=socket.gethostbyaddr(source_ip)[0]
             except:
-                source=source_ip
+                dns_cache[source_ip]=source_ip
+            source=dns_cache[source_ip]
         else:
             source=source_ip
         stats[source]={}
         for destination_ip in pre_stats[source_ip]:
             if args.resolve_dst:
                 try:
-                    destination=socket.gethostbyaddr(destination_ip)[0]
+                    if not dns_cache.has_key(destination_ip):
+                        dns_cache[destination_ip]=socket.gethostbyaddr(destination_ip)[0]
                 except:
-                    destination=destination_ip
+                    dns_cache[destination_ip]=destination_ip
+                destination=dns_cache[destination_ip]
             else:
                 destination=destination_ip
             stats[source][destination]=pre_stats[source_ip][destination_ip]
