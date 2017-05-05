@@ -159,7 +159,7 @@ def parse_log(file_object):
       yield log
 
 def main():
-    parser=argparse.ArgumentParser()
+    parser=argparse.ArgumentParser(description='Parse pflog output produced by "tcpdump -ne"')
     parser.add_argument("--regexp", action="store_true", default=False, help="Criterion provided in filters shall be treated as regexp")
     # filter_arg_dict=dict(zip(LOG_ELEMENTS,FILTER_OPTIONS))
     for e,o in zip(LOG_ELEMENTS,FILTER_OPTIONS):
