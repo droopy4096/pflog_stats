@@ -1,11 +1,13 @@
 pflog_stats
 ===========
 
-Generate stats from pflog files. It is an in-line filter used in pipelines::
+Generate stats from {Free,Open}BSD pflog files (or perhaps direct feed from the pflog0 interface). It is an in-line filter used in pipelines::
 
     tcpdump -enr pflog.0 | python pflog_stats.py
 
 inspired by https://forums.freebsd.org/threads/3592/
+
+For a longer time I've had a need to generate some meaningful stats out of my FreeBSD pflog files. Finally after dealing with another incident requiring me to sift through the /var/log/pflog* files "manually" with shell for loops and tcpdump only I realized that just sed/awking it is not enough, so I got looking. And found a `tool <https://forums.freebsd.org/threads/3592/>`_  that was close to what I wanted but didn't function no more. So instead of fixing it up - I took the idea and built stuff from scratch. 
 
 Usage
 =====
