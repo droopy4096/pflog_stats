@@ -18,6 +18,10 @@ import socket
 # 00:00:01.937933 rule 5.intra_services.20/0(match): pass in on vr2: 192.168.3.128.49144 > 192.168.0.1.53: 53364+[|domain]
 # 00:39:55.221738 rule 4.icmp.2/0(match): pass in on vr2: 192.168.3.107 > 192.168.3.1: ICMP echo request, id 11778, seq 1, length 64
 
+LOG_ELEMENTS   =('timestamp','rule','action','direction','interface','source_host','source_port','destination_host','destination_port')
+FILTER_OPTIONS =('timestamp','rule','action','direction','interface','source-host','source-port','destination-host','destination-port')
+
+
 class Filter:
     """ Include only selected records
     """
@@ -58,13 +62,96 @@ class ReFilter:
             if passed:
                 yield log
 
+class PFParser(object):
+    def __init__(self, filter_obj):
+        self.filter=filter_obj
+        # self.input=input_stream
+        # self.resolve_src=False
+        # self.resolve_dst=False
+        self.dns_cache={}
+
+    def parse(self,input_stream,resolve_src,resolve_dst):
+        pass
+    
+    def _resolve_ip(self,ip_addr):
+        try:
+            if not self.dns_cache.has_key(ip_addr):
+                self.dns_cache[ip_addr]=socket.gethostbyaddr(ip_addr)[0]
+        except:
+            self.dns_cache[ip_addr]=ip_addr
+        return self.dns_cache[ip_addr]
+
+class StatsParser(PFParser):
+    def __init__(self, filter_obj):
+        PFParser.__init__(self, filter_obj)
+    
+    def parse(self,input_stream,resolve_src,resolve_dst):
+        pre_stats={}
+        for log in self.filter(parse_log(input_stream)):
+          try:
+            source=log['source_host']
+            destination=log['destination_host']
+            # print log
+            if not pre_stats.has_key(source):
+                pre_stats[source]={}
+            if not pre_stats[source].has_key(destination):
+                pre_stats[source][destination]=1
+            else:
+                pre_stats[source][destination]+=1
+            # print m.groups()
+          except Exception, e:
+              print e
+
+        stats={}
+        for source_ip in pre_stats:
+            if resolve_src:
+                source=self._resolve_ip(source_ip)
+            else:
+                source=source_ip
+            stats[source]={}
+            for destination_ip in pre_stats[source_ip]:
+                if resolve_dst:
+                    destination=self._resolve_ip(destination_ip)
+                else:
+                    destination=destination_ip
+                stats[source][destination]=pre_stats[source_ip][destination_ip]
+        return stats
+
+class LineParser(PFParser):
+    def __init__(self, filter_obj):
+        PFParser.__init__(self, filter_obj)
+        self.field_filter=LOG_ELEMENTS
+    
+    def setFieldFilter(self,field_filter):
+        self.field_filter=field_filter
+    
+    def parse(self,input_stream,resolve_src,resolve_dst):
+        stats=[]
+        for log in self.filter(parse_log(input_stream)):
+            entry={}
+            for f in self.field_filter:
+                log_field=log[f]
+                if f == 'source_host':
+                    if resolve_src:
+                        log_field=self._resolve_ip(log[f])
+                elif f == 'destination_host':
+                    if resolve_dst:
+                        log_field=self._resolve_ip(log[f])
+
+                entry[f]=log_field
+            stats.append(entry)
+        return stats
+
 def parse_log(file_object):
-    x=re.compile(r'rule (?P<rule>\S+)\: (?P<action>pass|block) (?P<direction>in|out) on (?P<interface>\w+)\: (?P<source_host>\d+\.\d+\.\d+\.\d+)(?:\.(?P<source_port>\d+))? > (?P<destination_host>\d+\.\d+\.\d+\.\d+)(?:\.(?P<destination_port>\d+))?\:')
+    """
+    produce an iterator returning dictionary equivalent of log entry
+    """
+    x=re.compile(r'(?P<timestamp>[\d\:\.]+) rule (?P<rule>\S+)\: (?P<action>pass|block) (?P<direction>in|out) on (?P<interface>\w+)\: (?P<source_host>\d+\.\d+\.\d+\.\d+)(?:\.(?P<source_port>\d+))? > (?P<destination_host>\d+\.\d+\.\d+\.\d+)(?:\.(?P<destination_port>\d+))?\:')
     for s in file_object:
       m=x.search(s)
       log={}
       try:
-        for block in ('rule','action','direction','interface','source_host','source_port','destination_host','destination_port'):
+        for block in LOG_ELEMENTS:
             log[block]=m.group(block)
       except:
         print "!!!", s
@@ -74,67 +161,45 @@ def parse_log(file_object):
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument("--regexp", action="store_true", default=False, help="Criterion provided in filters shall be treated as regexp")
-    parser.add_argument("--filter-src", help="print stats only for sources matching criteria")
-    parser.add_argument("--filter-dst", help="print stats only for destinations matching criteria")
+    # filter_arg_dict=dict(zip(LOG_ELEMENTS,FILTER_OPTIONS))
+    for e,o in zip(LOG_ELEMENTS,FILTER_OPTIONS):
+        parser.add_argument("--select-"+o, dest=e, default=None, help="select "+o+" matching lines")
+    # parser.add_argument("--filter-src", help="print stats only for sources matching criteria")
+    # parser.add_argument("--filter-dst", help="print stats only for destinations matching criteria")
     parser.add_argument("--resolve-dst", action="store_true", default=False, 
             help="resolve destination IPs")
     parser.add_argument("--resolve-src", action="store_true", default=False, 
             help="resolve source IPs")
+    parser.add_argument("--parser", choices=['stats','lines'], default='stats')
+    parser.add_argument("--output-field", choices=LOG_ELEMENTS, action="append", dest='output_fields')
+    parser.add_argument("--format", choices=['compact', 'pretty'], default='pretty')
     args=parser.parse_args()
 
     filter_params={}
-    if args.filter_src:
-        filter_params['source_host']=args.filter_src
-
-    if args.filter_dst:
-        filter_params['destination_host']=args.filter_dst
+    args_dict=vars(args)
+    for e,o in zip(LOG_ELEMENTS,FILTER_OPTIONS):
+        if args_dict.has_key(e):
+            if not (args_dict[e] is None):
+                filter_params[e]=args_dict[e]
+    print "Selected: ", filter_params
+    print "Fields: ", args.output_fields
 
     if args.regexp:
         log_filter=ReFilter(**filter_params)
     else:
         log_filter=Filter(**filter_params)
-    pre_stats={}
-    for log in log_filter(parse_log(sys.stdin)):
-      try:
-        source=log['source_host']
-        destination=log['destination_host']
-        # print log
-        if not pre_stats.has_key(source):
-            pre_stats[source]={}
-        if not pre_stats[source].has_key(destination):
-            pre_stats[source][destination]=1
-        else:
-            pre_stats[source][destination]+=1
-        # print m.groups()
-      except Exception, e:
-          print e
 
-    stats={}
-    dns_cache={}
-    for source_ip in pre_stats:
-        if args.resolve_src:
-            try:
-                if not dns_cache.has_key(source_ip):
-                    dns_cache[source_ip]=socket.gethostbyaddr(source_ip)[0]
-            except:
-                dns_cache[source_ip]=source_ip
-            source=dns_cache[source_ip]
-        else:
-            source=source_ip
-        stats[source]={}
-        for destination_ip in pre_stats[source_ip]:
-            if args.resolve_dst:
-                try:
-                    if not dns_cache.has_key(destination_ip):
-                        dns_cache[destination_ip]=socket.gethostbyaddr(destination_ip)[0]
-                except:
-                    dns_cache[destination_ip]=destination_ip
-                destination=dns_cache[destination_ip]
-            else:
-                destination=destination_ip
-            stats[source][destination]=pre_stats[source_ip][destination_ip]
-
-    print json.dumps(stats,indent=2)
+    if args.parser=='stats':
+        pfparser=StatsParser(log_filter)
+    elif args.parser=='lines':
+        pfparser=LineParser(log_filter)
+        if args.output_fields:
+            pfparser.setFieldFilter(args.output_fields)
+    stats=pfparser.parse(sys.stdin, args.resolve_src, args.resolve_dst)
+    if args.format=='compact':
+        print json.dumps(stats)
+    elif args.format=='pretty':
+        print json.dumps(stats,indent=2)
 
 if __name__ == '__main__':
     main()
