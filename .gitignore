@@ -91,4 +91,6 @@ ENV/
 node_modules/
 node_modules/*
 
-*.json
+data/
+data/*
+package*.json

@@ -8,6 +8,8 @@ ES_INDEX_SUFFIX=${ES_INDEX_SUFFIX:-${datestamp}}
 ES_URI=http://${ES_HOST}:${ES_PORT}
 ES_INDEX=logs.${ES_INDEX_SUFFIX}
 
+TCPDUMP_FILTER=${TCPDUMP_FILTER:-"host 192.168.3.214 or host 192.168.3.216"}
+
 curl -H 'Content-Type: application/json' -XPUT ${ES_URI}/${ES_INDEX} -d'
 {
     "mappings": {
@@ -26,6 +28,8 @@ curl -H 'Content-Type: application/json' -XPUT ${ES_URI}/${ES_INDEX} -d'
             "destination_host": {"type": "ip"},
             "destination_port": {"type": "integer"},
             "resolved_dst": {"type": "keyword" },
+            "whois": {"type": "keyword" },
+            "short_domain": {"type": "keyword" },
             "details": {"type": "text"}
         }
     }
@@ -41,11 +45,13 @@ else
     logs=$(ls -1t /var/log/pflog.*.bz2 | sort -r)
 fi
 
+set -e
 for log in ${logs}
 do
     /usr/bin/bzcat ${log} | \
-        tcpdump -ttenr - host 192.168.3.214 or host 192.168.3.216 | \
+        tcpdump -ttenr - ${TCPDUMP_FILTER} | \
         python3.7 ~dimon/pflog_stats.py --parser lines --format log --resolve-to-field --resolve-dst | \
-        python3.7 ~dimon/es_poster.py --es-uri=${ES_URI} --es-index=${ES_INDEX}
+        python3.7 ~dimon/dns_digger.py --dig-dst --only-ip --shorten-domain=2 | \
+        python3.7 ~dimon/es_poster.py --es-uri=${ES_URI} --es-index=${ES_INDEX} 
     touch -r ${log} ${log_mark}
 done
