@@ -75,7 +75,7 @@ class PFParser(object):
     
     def _resolve_ip(self,ip_addr):
         try:
-            if not self.dns_cache.has_key(ip_addr):
+            if ip_addr not in self.dns_cache:
                 self.dns_cache[ip_addr]=socket.gethostbyaddr(ip_addr)[0]
         except:
             self.dns_cache[ip_addr]=ip_addr
@@ -85,22 +85,22 @@ class StatsParser(PFParser):
     def __init__(self, filter_obj):
         PFParser.__init__(self, filter_obj)
     
-    def parse(self,input_stream,resolve_src,resolve_dst):
+    def parse(self,input_stream,resolve_src,resolve_dst,resolve2field=False):
         pre_stats={}
         for log in self.filter(parse_log(input_stream)):
           try:
             source=log['source_host']
             destination=log['destination_host']
             # print log
-            if not pre_stats.has_key(source):
+            if source not in pre_stats:
                 pre_stats[source]={}
-            if not pre_stats[source].has_key(destination):
+            if destination not in pre_stats[source]:
                 pre_stats[source][destination]=1
             else:
                 pre_stats[source][destination]+=1
             # print m.groups()
-          except Exception, e:
-              print e
+          except Exception as e:
+              print(str(e))
 
         stats={}
         for source_ip in pre_stats:
@@ -125,19 +125,27 @@ class LineParser(PFParser):
     def setFieldFilter(self,field_filter):
         self.field_filter=field_filter
     
-    def parse(self,input_stream,resolve_src,resolve_dst):
+    def parse(self,input_stream,resolve_src,resolve_dst,resolve2field=False):
         stats=[]
         for log in self.filter(parse_log(input_stream)):
             entry={}
             for f in self.field_filter:
                 log_field=log[f]
+                resolved_field=None
                 if f == 'source_host':
-                    if resolve_src:
+                    if resolve_src and not resolve2field:
                         log_field=self._resolve_ip(log[f])
+                    elif resolve_src and resolve2field:
+                        resolved_field='src'
+                        resolved=self._resolve_ip(log[f])
                 elif f == 'destination_host':
-                    if resolve_dst:
+                    if resolve_dst and not resolve2field:
                         log_field=self._resolve_ip(log[f])
-
+                    elif resolve_dst and resolve2field:
+                        resolved_field='dst'
+                        resolved=self._resolve_ip(log[f])
+                if resolve2field and resolved_field:
+                    entry['resolved_'+resolved_field]=resolved
                 entry[f]=log_field
             stats.append(entry)
         return stats
@@ -148,7 +156,7 @@ def parse_log(file_object):
     """
     # 21:27:20.200343 rule 1.wifi.0/0(match): pass in on vr2: 192.168.3.214.33735 > 208.67.222.123.53: 39699+ [1au] AAAA? piazza.com. (39)
 
-    x=re.compile(r'(?P<timestamp>[\d\:\.]+) rule (?P<rule>\S+)\: (?P<action>pass|block) (?P<direction>in|out) on (?P<interface>\w+)\: (?P<source_host>\d+\.\d+\.\d+\.\d+)(?:\.(?P<source_port>\d+))? > (?P<destination_host>\d+\.\d+\.\d+\.\d+)(?:\.(?P<destination_port>\d+))?\: (?P<details>.*)')
+    x=re.compile(r'(?P<timestamp>[\d\:\.]+) rule (?P<rule>\S+)\: (?P<action>pass|block|\S+) (?P<direction>in|out) on (?P<interface>\w+)\: (?P<source_host>\d+\.\d+\.\d+\.\d+)(?:\.(?P<source_port>\d+))? > (?P<destination_host>\d+\.\d+\.\d+\.\d+)(?:\.(?P<destination_port>\d+))?\: (?P<details>.*)')
     for s in file_object:
       m=x.search(s)
       log={}
@@ -156,7 +164,7 @@ def parse_log(file_object):
         for block in LOG_ELEMENTS:
             log[block]=m.group(block)
       except:
-        print "!!!", s
+        print("!!!{}".format(s))
         continue
       yield log
 
@@ -168,19 +176,20 @@ def main():
         parser.add_argument("--select-"+o, dest=e, default=None, help="select "+o+" matching lines")
     # parser.add_argument("--filter-src", help="print stats only for sources matching criteria")
     # parser.add_argument("--filter-dst", help="print stats only for destinations matching criteria")
+    parser.add_argument('--resolve-to-field', action="store_true", default=False)
     parser.add_argument("--resolve-dst", action="store_true", default=False, 
             help="resolve destination IPs")
     parser.add_argument("--resolve-src", action="store_true", default=False, 
             help="resolve source IPs")
     parser.add_argument("--parser", choices=['stats','lines'], default='stats')
     parser.add_argument("--output-field", choices=LOG_ELEMENTS, action="append", dest='output_fields')
-    parser.add_argument("--format", choices=['compact', 'pretty'], default='pretty')
+    parser.add_argument("--format", choices=['compact', 'pretty', 'log'], default='pretty')
     args=parser.parse_args()
 
     filter_params={}
     args_dict=vars(args)
     for e,o in zip(LOG_ELEMENTS,FILTER_OPTIONS):
-        if args_dict.has_key(e):
+        if e in args_dict:
             if not (args_dict[e] is None):
                 filter_params[e]=args_dict[e]
     # print "Selected: ", filter_params
@@ -197,12 +206,16 @@ def main():
         pfparser=LineParser(log_filter)
         if args.output_fields:
             pfparser.setFieldFilter(args.output_fields)
-    stats=pfparser.parse(sys.stdin, args.resolve_src, args.resolve_dst)
+    stats=pfparser.parse(sys.stdin, args.resolve_src, args.resolve_dst,args.resolve_to_field)
     output={'selected': filter_params, 'fields': args.output_fields, 'stats': stats}
     if args.format=='compact':
-        print json.dumps(output)
+        print(json.dumps(output))
     elif args.format=='pretty':
-        print json.dumps(output,indent=2)
+        print(json.dumps(output,indent=2))
+    elif args.format=='log':
+        for l in stats:
+            print(json.dumps(l))
+
 
 if __name__ == '__main__':
     main()
