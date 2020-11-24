@@ -13,8 +13,6 @@ import json
 import argparse
 import socket
 
-
-
 # 00:00:01.937933 rule 5.intra_services.20/0(match): pass in on vr2: 192.168.3.128.49144 > 192.168.0.1.53: 53364+[|domain]
 # 00:39:55.221738 rule 4.icmp.2/0(match): pass in on vr2: 192.168.3.107 > 192.168.3.1: ICMP echo request, id 11778, seq 1, length 64
 
@@ -77,7 +75,9 @@ class PFParser(object):
         try:
             if ip_addr not in self.dns_cache:
                 self.dns_cache[ip_addr]=socket.gethostbyaddr(ip_addr)[0]
-        except:
+        except Exception as ex:
+            # print(ip_addr)
+            # print(ex)
             self.dns_cache[ip_addr]=ip_addr
         return self.dns_cache[ip_addr]
 
