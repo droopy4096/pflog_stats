@@ -24,31 +24,8 @@ TCPDUMP_FILTER=${TCPDUMP_FILTER:-"( host 192.168.3.214 or host 192.168.3.216 ) a
 #  'size': '58'}
 # 
 
-curl -H 'Content-Type: application/json' -XPUT ${ES_URI}/${ES_INDEX} -d'
-{
-    "mappings": {
-        "dynamic": true,
-        "properties": {
-            "timestamp": {
-                "type": "date",
-                "format": "epoch_second"
-            },
-            "proto": { "type": "keyword" },
-            "source_host": { "type": "ip" },
-            "source_port": {"type": "integer"},
-            "destination_host": {"type": "ip"},
-            "destination_port": {"type": "integer"},
-            "query": {"type": "keyword" },
-            "query_id": {"type": "integer" },
-            "query_class": {"type": "keyword" },
-            "operation": {"type": "keyword" },
-            "size": {"type": "integer"}
-        }
-    }
-}
-'
 
-log_mark=/var/log/pflog_dns_es.loaded
+log_mark=/var/log/pflog_dns_es.${ES_HOST}_${ES_PORT}
 
 if [ -r ${log_mark} ]
 then
@@ -64,9 +41,32 @@ do
     then
         ES_INDEX=${ES_INDEX_PREFIX}.${ES_INDEX_SUFFIX}
     else
-        datesampp=$(stat -f %Sm -t %Y%m%d ${log})
+        datestamp=$(stat -f %Sm -t %Y%m%d ${log})
         ES_INDEX=${ES_INDEX_PREFIX}.${datestamp}
     fi
+    curl -H 'Content-Type: application/json' -XPUT ${ES_URI}/${ES_INDEX} -d'
+    {
+        "mappings": {
+            "dynamic": true,
+            "properties": {
+                "timestamp": {
+                    "type": "date",
+                    "format": "epoch_second"
+                },
+                "proto": { "type": "keyword" },
+                "source_host": { "type": "ip" },
+                "source_port": {"type": "integer"},
+                "destination_host": {"type": "ip"},
+                "destination_port": {"type": "integer"},
+                "query": {"type": "keyword" },
+                "query_id": {"type": "integer" },
+                "query_class": {"type": "keyword" },
+                "operation": {"type": "keyword" },
+                "size": {"type": "integer"}
+            }
+        }
+    }
+    '
     /usr/bin/bzcat ${log} | \
         tcpdump -ttnr - ${TCPDUMP_FILTER} | \
         python3.7 ~dimon/pflog_stats_dns.py | \

@@ -10,33 +10,8 @@ ES_INDEX_PREFIX=${ES_INDEX_PREFIX:-logs}
 
 TCPDUMP_FILTER=${TCPDUMP_FILTER:-"tcp and host 192.168.3.214 or host 192.168.3.216"}
 
-curl -H 'Content-Type: application/json' -XPUT ${ES_URI}/${ES_INDEX} -d'
-{
-    "mappings": {
-        "dynamic": true,
-        "properties": {
-            "timestamp": {
-                "type": "date",
-                "format": "epoch_second"
-            },
-            "rule": { "type": "keyword" },
-            "action": { "type": "keyword" },
-            "direction": {"type": "keyword" },
-            "interface": {"type": "keyword" },
-            "source_host": {"type": "ip" },
-            "source_port": {"type": "integer"},
-            "destination_host": {"type": "ip"},
-            "destination_port": {"type": "integer"},
-            "resolved_dst": {"type": "keyword" },
-            "whois": {"type": "keyword" },
-            "short_domain": {"type": "keyword" },
-            "details": {"type": "text"}
-        }
-    }
-}
-'
 
-log_mark=/var/log/pflog_es.loaded
+log_mark=/var/log/pflog_es.${ES_HOST}_${ES_PORT}
 
 if [ -r ${log_mark} ]
 then
@@ -52,9 +27,34 @@ do
     then
         ES_INDEX=${ES_INDEX_PREFIX}.${ES_INDEX_SUFFIX}
     else
-        datesampp=$(stat -f %Sm -t %Y%m%d ${log})
+        datestamp=$(stat -f %Sm -t %Y%m%d ${log})
         ES_INDEX=${ES_INDEX_PREFIX}.${datestamp}
     fi
+    curl -H 'Content-Type: application/json' -XPUT ${ES_URI}/${ES_INDEX} -d'
+    {
+        "mappings": {
+            "dynamic": true,
+            "properties": {
+                "timestamp": {
+                    "type": "date",
+                    "format": "epoch_second"
+                },
+                "rule": { "type": "keyword" },
+                "action": { "type": "keyword" },
+                "direction": {"type": "keyword" },
+                "interface": {"type": "keyword" },
+                "source_host": {"type": "ip" },
+                "source_port": {"type": "integer"},
+                "destination_host": {"type": "ip"},
+                "destination_port": {"type": "integer"},
+                "resolved_dst": {"type": "keyword" },
+                "whois": {"type": "keyword" },
+                "short_domain": {"type": "keyword" },
+                "details": {"type": "text"}
+            }
+        }
+    }
+    '
     /usr/bin/bzcat ${log} | \
         tcpdump -ttenr - ${TCPDUMP_FILTER} | \
         python3.7 ~dimon/pflog_stats.py --parser lines --format log --resolve-to-field --resolve-dst | \
